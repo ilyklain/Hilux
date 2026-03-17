@@ -1,0 +1,63 @@
+{
+  "name": "@gustavoj/hilux",
+  "version": "1.0.0",
+  "description": "A bot detector for APIs, that analyzes HTTP requests",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "hilux-server": "dist/server.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    },
+    "./fastify": {
+      "types": "./dist/plugins/fastify.d.ts",
+      "require": "./dist/plugins/fastify.js"
+    },
+    "./express": {
+      "types": "./dist/plugins/express.d.ts",
+      "require": "./dist/plugins/express.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "bot-detection",
+    "api-security",
+    "rate-limiting",
+    "waf",
+    "middleware",
+    "fastify",
+    "express",
+    "risk-score",
+    "ip-reputation",
+    "security"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "fastify-plugin": "^5.0.1",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
