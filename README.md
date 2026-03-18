@@ -164,6 +164,9 @@ const hilux = new Hilux({
 - Node.js >= 18
 - Redis
 - PostgreSQL
+---
+## NPM Package
+https://www.npmjs.com/package/@gustavoj/hilux
 
 ## License
 
