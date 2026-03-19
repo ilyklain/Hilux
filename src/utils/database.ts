@@ -241,6 +241,48 @@ export class DatabaseManager {
     return result.rows;
   }
 
+  async addToWhitelist(ip: string, reason: string): Promise<void> {
+    const db = this.getPool();
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ip_whitelist (
+        ip VARCHAR(45) PRIMARY KEY,
+        reason VARCHAR(512) NOT NULL DEFAULT 'manual',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+    await db.query(
+      `INSERT INTO ip_whitelist (ip, reason) VALUES ($1, $2)
+       ON CONFLICT (ip) DO UPDATE SET reason = $2`,
+      [ip, reason]
+    );
+  }
+
+  async removeFromWhitelist(ip: string): Promise<boolean> {
+    const db = this.getPool();
+    const result = await db.query(`DELETE FROM ip_whitelist WHERE ip = $1`, [ip]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async isWhitelisted(ip: string): Promise<boolean> {
+    const db = this.getPool();
+    try {
+      const result = await db.query(`SELECT 1 FROM ip_whitelist WHERE ip = $1 LIMIT 1`, [ip]);
+      return result.rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async getWhitelist(): Promise<any[]> {
+    const db = this.getPool();
+    try {
+      const result = await db.query(`SELECT * FROM ip_whitelist ORDER BY created_at DESC`);
+      return result.rows;
+    } catch {
+      return [];
+    }
+  }
+
   async isHealthy(): Promise<boolean> {
     try {
       const db = this.getPool();
