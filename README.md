@@ -14,7 +14,7 @@ Powerful bot detector for APIs. Analyzes HTTP requests with 8-signal detection, 
 ## Install
 
 ```bash
-npm install hilux
+npm i @gustavoj/hilux
 ```
 
 ## Quick Start
