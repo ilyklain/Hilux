@@ -1,4 +1,8 @@
 export { Hilux } from "./hilux";
+export { HiluxManager } from "./object/manager";
+export { HiluxRequestAdapter } from "./object/requestsobject";
+export { BlacklistController } from "./controller/blacklist";
+export { WhitelistController } from "./controller/whitelist";
 
 export {
   HiluxConfig,
