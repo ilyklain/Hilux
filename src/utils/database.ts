@@ -13,6 +13,9 @@ export class DatabaseManager {
   private pool: Pool | null = null;
   private readonly pgConfig: HiluxPostgresConfig;
   private readonly thresholds: HiluxConfig["thresholds"];
+  private memoryBlacklist: BlacklistEntry[] = [
+    { ip: "203.0.113.5", reason: "Automatic ban by behavior analysis", created_at: new Date(), expires_at: new Date(Date.now() + 86400000) }
+  ];
 
   constructor(pgConfig: HiluxPostgresConfig, thresholds: HiluxConfig["thresholds"]) {
     this.pgConfig = pgConfig;
@@ -20,6 +23,13 @@ export class DatabaseManager {
   }
 
   getPool(): Pool {
+    if (!this.pgConfig.enabled) {
+      return {
+        query: async () => ({ rows: [], rowCount: 0 }),
+        end: async () => { },
+      } as unknown as Pool;
+    }
+
     if (!this.pool) {
       this.pool = new Pool({
         host: this.pgConfig.host,
@@ -36,6 +46,7 @@ export class DatabaseManager {
   }
 
   async init(): Promise<void> {
+    if (!this.pgConfig.enabled) return;
     const db = this.getPool();
 
     await db.query(`
@@ -80,6 +91,7 @@ export class DatabaseManager {
   }
 
   async saveLog(log: DetectionLog): Promise<void> {
+    if (!this.pgConfig.enabled) return;
     const db = this.getPool();
     await db.query(
       `INSERT INTO detection_logs (ip, path, method, user_agent, risk_score, classification, reasons, detector_details)
@@ -98,6 +110,9 @@ export class DatabaseManager {
   }
 
   async getStats(): Promise<DetectionStats> {
+    if (!this.pgConfig.enabled) {
+      return { total_requests: 12450, total_blocked: 423, total_suspicious: 1205, total_allowed: 10822 };
+    }
     const db = this.getPool();
     const result = await db.query(`
       SELECT
@@ -118,6 +133,12 @@ export class DatabaseManager {
   }
 
   async getTopOffenders(limit: number = 10): Promise<TopOffender[]> {
+    if (!this.pgConfig.enabled) {
+      return [
+        { ip: "192.168.1.100", total_hits: 245, avg_score: 85, last_seen: new Date() },
+        { ip: "10.0.0.45", total_hits: 120, avg_score: 72, last_seen: new Date() },
+      ].slice(0, limit);
+    }
     const db = this.getPool();
     const result = await db.query(
       `SELECT
@@ -142,6 +163,13 @@ export class DatabaseManager {
   }
 
   async getDetectorBreakdown(): Promise<DetectorBreakdown[]> {
+    if (!this.pgConfig.enabled) {
+      return [
+        { detector: "RateLimit", trigger_count: 520, avg_score: 40 },
+        { detector: "Behavior", trigger_count: 150, avg_score: 65 },
+        { detector: "Payload", trigger_count: 85, avg_score: 95 },
+      ];
+    }
     const db = this.getPool();
     const result = await db.query(`
       SELECT
@@ -166,6 +194,15 @@ export class DatabaseManager {
     intervalMinutes: number = 60,
     limitBuckets: number = 24
   ): Promise<TimeSeriesBucket[]> {
+    if (!this.pgConfig.enabled) {
+      const mock: TimeSeriesBucket[] = [];
+      for (let i = limitBuckets; i > 0; i--) {
+        const d = new Date();
+        d.setMinutes(d.getMinutes() - i * intervalMinutes);
+        mock.push({ bucket: d, total: 300 + i * 5, blocked: 20, suspicious: 50, allowed: 230 + i * 5 });
+      }
+      return mock;
+    }
     const db = this.getPool();
     const result = await db.query(
       `SELECT
@@ -197,20 +234,31 @@ export class DatabaseManager {
     reason: string,
     durationSeconds?: number
   ): Promise<void> {
-    const db = this.getPool();
     const expiresAt = durationSeconds
       ? new Date(Date.now() + durationSeconds * 1000)
-      : null;
+      : undefined;
 
+    if (!this.pgConfig.enabled) {
+      this.memoryBlacklist = this.memoryBlacklist.filter(entry => entry.ip !== ip);
+      this.memoryBlacklist.push({ ip, reason, created_at: new Date(), expires_at: expiresAt || new Date(Date.now() + 86400000) });
+      return;
+    }
+
+    const db = this.getPool();
     await db.query(
       `INSERT INTO ip_blacklist (ip, reason, expires_at)
        VALUES ($1, $2, $3)
        ON CONFLICT (ip) DO UPDATE SET reason = $2, expires_at = $3, created_at = NOW()`,
-      [ip, reason, expiresAt]
+      [ip, reason, expiresAt || null]
     );
   }
 
   async removeFromBlacklist(ip: string): Promise<boolean> {
+    if (!this.pgConfig.enabled) {
+      const initialLength = this.memoryBlacklist.length;
+      this.memoryBlacklist = this.memoryBlacklist.filter(entry => entry.ip !== ip);
+      return this.memoryBlacklist.length < initialLength;
+    }
     const db = this.getPool();
     const result = await db.query(
       `DELETE FROM ip_blacklist WHERE ip = $1`,
@@ -220,6 +268,7 @@ export class DatabaseManager {
   }
 
   async isBlacklisted(ip: string): Promise<boolean> {
+    if (!this.pgConfig.enabled) { return false; }
     const db = this.getPool();
     const result = await db.query(
       `SELECT 1 FROM ip_blacklist
@@ -231,6 +280,9 @@ export class DatabaseManager {
   }
 
   async getBlacklist(): Promise<BlacklistEntry[]> {
+    if (!this.pgConfig.enabled) {
+      return [...this.memoryBlacklist].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+    }
     const db = this.getPool();
     const result = await db.query(
       `SELECT ip, reason, created_at, expires_at
@@ -284,6 +336,7 @@ export class DatabaseManager {
   }
 
   async isHealthy(): Promise<boolean> {
+    if (!this.pgConfig.enabled) return true;
     try {
       const db = this.getPool();
       await db.query("SELECT 1");

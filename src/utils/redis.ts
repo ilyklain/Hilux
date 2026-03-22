@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import RedisMock from "ioredis-mock";
 import { HiluxRedisConfig } from "../config/config";
 
 export class RedisManager {
@@ -12,6 +13,12 @@ export class RedisManager {
 
   getClient(): Redis {
     if (!this.client) {
+      if (this.redisConfig.enabled === false) {
+        this.client = new RedisMock() as unknown as Redis;
+        this.healthy = true;
+        return this.client;
+      }
+
       this.client = new Redis({
         host: this.redisConfig.host,
         port: this.redisConfig.port,
@@ -44,7 +51,9 @@ export class RedisManager {
 
   async connect(): Promise<void> {
     const client = this.getClient();
-    await client.connect();
+    if (this.redisConfig.enabled !== false) {
+      await client.connect();
+    }
     this.healthy = true;
   }
 

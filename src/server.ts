@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import Fastify from "fastify";
+import crypto from "crypto";
+import path from "path";
+import fastifyStatic from "@fastify/static";
 import { Hilux } from "./hilux";
 import { buildConfigFromEnv } from "./config/config";
 import { AnalysisRequest } from "./types/requestAnalysis";
@@ -11,6 +14,8 @@ const cfg = buildConfigFromEnv();
 const hilux = new Hilux(cfg);
 
 const server = Fastify({ logger: true });
+
+const DASHBOARD_SESSION_TOKEN = crypto.randomBytes(32).toString("hex");
 
 const analyzeSchema = {
   body: {
@@ -151,6 +156,23 @@ server.delete<{ Params: { ip: string } }>(
     return reply.send({ success: true, ip: request.params.ip });
   }
 );
+server.post<{ Body: { password?: string } }>("/hilux/auth", async (req, reply) => {
+  const validPassword = process.env.HILUX_DASHBOARD_PASSWORD || "123456";
+  if (req.body?.password === validPassword) {
+    return reply.send({ success: true, token: DASHBOARD_SESSION_TOKEN });
+  }
+  return reply.status(401).send({ error: "Invalid password" });
+});
+
+server.register(fastifyStatic, {
+  root: path.join(__dirname, "../dashboard-ui/out"),
+  prefix: "/hilux-dashboard/",
+  decorateReply: false,
+});
+
+server.get("/hilux-dashboard", async (_req, reply) => {
+  return reply.redirect("/hilux-dashboard/");
+});
 
 async function start(): Promise<void> {
   try {

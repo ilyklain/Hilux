@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "hilux-server": "dist/server.js"
+    "hilux-dash": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -23,6 +23,7 @@
   },
   "files": [
     "dist",
+    "dashboard-ui/out",
     "README.md"
   ],
   "scripts": {
@@ -45,10 +46,12 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@fastify/static": "^9.0.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1",
     "ioredis": "^5.4.2",
+    "ioredis-mock": "^8.13.1",
     "pg": "^8.13.1"
   },
   "devDependencies": {

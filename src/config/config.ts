@@ -4,12 +4,14 @@ export interface HiluxServerConfig {
 }
 
 export interface HiluxRedisConfig {
+  enabled: boolean;
   host: string;
   port: number;
   password?: string;
 }
 
 export interface HiluxPostgresConfig {
+  enabled: boolean;
   host: string;
   port: number;
   user: string;
@@ -133,12 +135,14 @@ const DEFAULT_CONFIG: HiluxConfig = {
   },
 
   redis: {
+    enabled: true,
     host: "127.0.0.1",
     port: 6379,
     password: undefined,
   },
 
   postgres: {
+    enabled: true,
     host: "127.0.0.1",
     port: 5432,
     user: "postgres",
@@ -497,11 +501,13 @@ export function buildConfigFromEnv(): HiluxConfig {
       host: process.env.HOST || undefined,
     },
     redis: {
+      enabled: process.env.REDIS_ENABLED !== "false",
       host: process.env.REDIS_HOST || undefined,
       port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : undefined,
       password: process.env.REDIS_PASSWORD || undefined,
     },
     postgres: {
+      enabled: process.env.POSTGRES_ENABLED !== "false",
       host: process.env.POSTGRES_HOST || undefined,
       port: process.env.POSTGRES_PORT ? parseInt(process.env.POSTGRES_PORT, 10) : undefined,
       user: process.env.POSTGRES_USER || undefined,
