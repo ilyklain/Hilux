@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { defaultNumericDomain } from "recharts/types/state/selectors/axisSelectors";
 
 const API_BASE = process.env.NODE_ENV === "development" ? "http://localhost:3000" : "";
 

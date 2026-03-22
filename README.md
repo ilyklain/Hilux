@@ -1,173 +1,150 @@
-# Hilux
+# Hilux: Bot Detection and API Hardening
 
-Powerful bot detector for APIs. Analyzes HTTP requests with 8-signal detection, IP reputation tracking, and cumulative risk scoring.
+Hilux is a high-performance, multilayered bot detection and deception engine designed for modern API infrastructures. It provides real-time analysis of incoming HTTP requests, utilizing an 8-signal heuristic engine to identify, score, and mitigate automated threats before they reach your application logic.
 
-## Features
+Designed for scalability and resilience, Hilux offers sub-millisecond latency for request analysis and integrates seamlessly with Fastify, Express, or as a standalone security gateway.
 
-- **8 Detection Signals** — Rate limiting, User-Agent analysis, header consistency, IP/CIDR matching, fingerprinting, payload inspection, behavior analysis, IP reputation
-- **Graduated Scoring** — Risk scores from 0–150 with allow/suspicious/block classification
-- **IP Reputation** — Redis-backed tracking with auto-escalation and decay
-- **Blacklist Management** — Manual and automatic blacklisting with expiration
-- **Graceful Degradation** — Continues working with partial analysis if Redis goes down
-- **Framework Integrations** — Fastify plugin, Express middleware, or standalone API
+## Core Capabilities
 
-## Install
+### Multi-Signal Heuristic Engine
+Hilux analyzes traffic through eight distinct security signals to generate a cumulative risk score:
+- **Rate & Burst Analysis**: Tracks request velocity and identifies burst patterns characteristic of automated scripts.
+- **User-Agent Forensics**: Detects known bot signatures, spoofed identities, and truncated headers.
+- **Header Fingerprinting**: Identifies inconsistencies between browser headers and declared client types.
+- **IP Intelligence**: Cross-references traffic against known datacenter ranges, Tor exit nodes, and VPN proxies.
+- **Payload Inspection**: Scans for SQL injection patterns, path traversal, and common scanning tool signatures.
+- **Behavioral Profiling**: Monitors path diversity and request timing to identify non-human interaction patterns.
+- **Fingerprint Persistence**: Maintains client fingerprints to track sophisticated bots that rotate IP addresses.
+- **Global Reputation**: Leverages historical violation data to assign long-term risk profiles to specific network actors.
+
+### Hardened Management Dashboard
+Hilux includes a full-featured, secure dashboard for low-latency monitoring and real-time configuration:
+- **Live Traffic Stream**: Monitor security events as they occur with detailed threat breakdowns.
+- **Advanced Deception**: Deploy "Honeypot Decoys" to mislead attackers and accelerate their blacklisting.
+- **Virtual Patching**: Enable logic-level fixes for known CVEs without modifying your core application code.
+- **Geographic Fencing**: Block or challenge traffic based on geographic origin.
+- **Credential Protection**: Hardened login protectors to mitigate credential stuffing and account takeover (ATO) attacks.
+
+## Installation
 
 ```bash
-npm i @gustavoj/hilux
+npm install @gustavoj/hilux
 ```
 
-## Quick Start
+## Implementation
 
-### Programmatic API
+### Standalone Security Gateway
+For environments requiring a decoupled security layer, Hilux can run as a standalone server:
 
-```typescript
-import { Hilux } from "hilux";
-
-const hilux = new Hilux({
-  redis: { host: "127.0.0.1", port: 6379 },
-  postgres: { host: "127.0.0.1", port: 5432, user: "postgres", password: "postgres", database: "hilux" },
-});
-
-await hilux.connect();
-
-const result = await hilux.analyze({
-  ip: "203.0.113.50",
-  path: "/api/data",
-  method: "GET",
-  headers: {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
-    "accept-language": "en-US,en;q=0.9",
-  },
-});
-
-console.log(result);
-// {
-//   bot: false,
-//   risk_score: 0,
-//   classification: "allow",
-//   confidence: 0,
-//   reasons: [],
-//   threat_breakdown: []
-// }
-
-await hilux.shutdown();
+```bash
+# Start the Hilux standalone server
+npx hilux-server
 ```
 
-### Fastify Plugin
+Configuration is managed via environment variables:
+```env
+PORT=3000
+HOST=0.0.0.0
 
+REDIS_ENABLED=false
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+POSTGRES_ENABLED=false
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=hilux
+
+RATE_LIMIT_WINDOW=60
+RATE_LIMIT_MAX=100
+RATE_LIMIT_BURST_WINDOW=5
+RATE_LIMIT_BURST_MAX=20
+
+REPUTATION_DECAY_INTERVAL=3600
+REPUTATION_DECAY_AMOUNT=5
+REPUTATION_ESCALATION_STEP=10
+REPUTATION_AUTO_BLACKLIST=200
+REPUTATION_TTL=86400
+
+BLACKLIST_DURATION=3600
+
+BEHAVIOR_WINDOW=300
+BEHAVIOR_MAX_PATHS=50
+BEHAVIOR_INTERVAL_THRESHOLD=50
+BEHAVIOR_MIN_REQUESTS=5
+
+DETECTOR_RATE=true
+DETECTOR_USER_AGENT=true
+DETECTOR_HEADER=true
+DETECTOR_IP=true
+DETECTOR_FINGERPRINT=true
+DETECTOR_PAYLOAD=true
+DETECTOR_BEHAVIOR=true
+DETECTOR_REPUTATION=true
+
+WHITELISTED_IPS=
+TOR_EXIT_NODES=
+VPN_PROXY_IPS=
+
+
+HILUX_DASHBOARD_PASSWORD="admin"
+```
+
+### Framework Integration
+
+#### Fastify
 ```typescript
 import Fastify from "fastify";
-import { hiluxFastifyPlugin } from "hilux";
+import { hiluxFastifyPlugin } from "@gustavoj/hilux";
 
 const app = Fastify();
 
 await app.register(hiluxFastifyPlugin, {
-  redis: { host: "127.0.0.1" },
-  postgres: { host: "127.0.0.1", user: "postgres", password: "postgres", database: "hilux" },
   plugin: {
     autoBlock: true,
-    prefix: "/hilux",
-  },
+    prefix: "/hilux-api"
+  }
 });
-
-app.get("/", async (request, reply) => {
-  // request.hilux contains the analysis result
-  return { message: "Hello", botScore: request.hilux?.risk_score };
-});
-
-await app.listen({ port: 3000 });
 ```
 
-### Express Middleware
-
+#### Express
 ```typescript
 import express from "express";
-import { hiluxExpressMiddleware } from "hilux";
+import { hiluxExpressMiddleware } from "@gustavoj/hilux";
 
 const app = express();
 
 app.use(hiluxExpressMiddleware({
-  redis: { host: "127.0.0.1" },
-  postgres: { host: "127.0.0.1", user: "postgres", password: "postgres", database: "hilux" },
-  autoBlock: true,
+  autoBlock: true
 }));
-
-app.get("/", (req, res) => {
-  res.json({ message: "Hello", botScore: req.hilux?.risk_score });
-});
-
-app.listen(3000);
 ```
 
-### Standalone Server
+## Security Tiers and Licensing
 
-```bash
-npx hilux-server
-```
+Hilux implements a tiered security model to cater to different infrastructure needs:
+- **Community**: Core heuristics and basic monitoring for non-commercial use.
+- **Pro**: Advanced modules including Login Protector, Geo-Blocking, and Honeypot Decoys.
+- **Enterprise**: Full forensic data streams, Virtual Patching for CVEs, and priority architecture support.
 
-Or configure via `.env`:
+Licensing is managed via the integrated billing module, supporting secure activation through Lemon Squeezy license keys.
 
-```env
-PORT=3000
-REDIS_HOST=127.0.0.1
-POSTGRES_HOST=127.0.0.1
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=hilux
-```
+## Architecture
 
-## API Endpoints (Standalone / Fastify)
+Hilux is built on a high-availability architecture:
+- **Engine**: TypeScript core with extensible detector modules.
+- **Persistence**: PostgreSQL for long-term forensic logs and configuration storage.
+- **Cache Layer**: Redis for sub-millisecond reputation tracking and rate-limit counters.
+- **Interoperability**: Standardized JSON API for integration with SOC and SIEM platforms.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /analyze | Analyze a request |
-| GET | /health | Service health status |
-| GET | /stats | Detection counts |
-| GET | /stats/top-offenders | Top offending IPs |
-| GET | /stats/detectors | Per-detector breakdown |
-| GET | /stats/timeline | Time-series stats |
-| GET | /reputation/:ip | Query IP reputation |
-| DELETE | /reputation/:ip | Reset IP reputation |
-| GET | /blacklist | List blacklisted IPs |
-| POST | /blacklist | Add IP to blacklist |
-| DELETE | /blacklist/:ip | Remove from blacklist |
+## Developer Resources
 
-## Detectors
-
-| Detector | Signals | Score |
-|----------|---------|-------|
-| Rate | Mild / Heavy / Burst | +20 / +40 / +50 |
-| User-Agent | Known bot / Spoofed / Truncated | +30 / +25 / +15 |
-| Header | Missing / Inconsistent / Impossible | +5–35 |
-| IP | Datacenter / Tor / VPN | +30 / +30 / +20 |
-| Fingerprint | Accept / Encoding / Client hints | up to +25 |
-| Payload | SQLi / Traversal / Scanner | +35 |
-| Behavior | Path diversity / Regular timing | up to +25 |
-| Reputation | Low / Bad / Critical | +15 / +25 / +40 |
-
-## Configuration
-
-All defaults can be overridden via the constructor:
-
-```typescript
-const hilux = new Hilux({
-  thresholds: { suspicious: 30, block: 60 },
-  scoring: { rateLimitBurst: 60 },
-  enabledDetectors: { payload: false },
-  whitelistedIps: ["127.0.0.1"],
-});
-```
-
-## Requirements
-
-- Node.js >= 18
-- Redis
-- PostgreSQL
----
-## NPM Package
-https://www.npmjs.com/package/@gustavoj/hilux
+- **Main Repository**: [github.com/ilyklain/Hilux](https://github.com/ilyklain/Hilux)
+- **NPM Package**: [@gustavoj/hilux](https://www.npmjs.com/package/@gustavoj/hilux)
+- **Documentation**: [hilux.dev](https://hilux-website.vercel.app/docs)
 
 ## License
 
-MIT
+Copyright (c) 2026 Hilux Security. Licensed under the MIT License.
