@@ -104,6 +104,37 @@ export interface HiluxCustomRule {
   action: "ALLOW" | "BLOCK" | "LOG" | "CHALLENGE" | "SIMULATE";
 }
 
+export interface HiluxLoginProtectorConfig {
+  enabled: boolean;
+  paths: string[];
+  maxAttempts: number;
+  windowSeconds: number;
+  honeypotField: string;
+}
+
+export interface HiluxGeoBlockingConfig {
+  enabled: boolean;
+  blockedCountries: string[];
+}
+
+export interface HiluxHoneypotDecoysConfig {
+  enabled: boolean;
+  paths: string[];
+  banDurationSeconds: number;
+}
+
+export interface HiluxVirtualPatchingConfig {
+  enabled: boolean;
+  activePatches: string[];
+}
+
+export interface HiluxExtensionsConfig {
+  loginProtector: HiluxLoginProtectorConfig;
+  geoBlocking: HiluxGeoBlockingConfig;
+  honeypotDecoys: HiluxHoneypotDecoysConfig;
+  virtualPatching: HiluxVirtualPatchingConfig;
+}
+
 export interface HiluxConfig {
   server: HiluxServerConfig;
   redis: HiluxRedisConfig;
@@ -117,6 +148,7 @@ export interface HiluxConfig {
   plugin: HiluxPluginConfig;
   whitelistedIps: string[];
   customRules: HiluxCustomRule[];
+  extensions: HiluxExtensionsConfig;
   suspiciousUserAgents: string[];
   invalidChromeVersions: { minMajor: number; maxMajor: number };
   requiredBrowserHeaders: string[];
@@ -128,6 +160,8 @@ export interface HiluxConfig {
   sqlInjectionPatterns: string[];
   pathTraversalPatterns: string[];
   behavior: HiluxBehaviorConfig;
+  plan: "Free" | "Pro" | "Enterprise";
+  licenseKey?: string;
 }
 
 export type DeepPartial<T> = {
@@ -238,6 +272,32 @@ const DEFAULT_CONFIG: HiluxConfig = {
 
   whitelistedIps: [],
   customRules: [],
+
+  extensions: {
+    loginProtector: {
+      enabled: false,
+      paths: ["/login", "/auth/login", "/wp-login.php"],
+      maxAttempts: 5,
+      windowSeconds: 300,
+      honeypotField: "hilux_hidden_field",
+    },
+    geoBlocking: {
+      enabled: false,
+      blockedCountries: [],
+    },
+    honeypotDecoys: {
+      enabled: false,
+      paths: ["/.env", "/phpmyadmin", "/wp-login.php", "/.git/config"],
+      banDurationSeconds: 86400,
+    },
+    virtualPatching: {
+      enabled: false,
+      activePatches: ["log4shell", "springshell", "shellshock"],
+    },
+  },
+
+  plan: "Free",
+  licenseKey: "",
 
   suspiciousUserAgents: [
     "curl",

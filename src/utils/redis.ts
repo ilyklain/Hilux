@@ -61,6 +61,18 @@ export class RedisManager {
     return this.healthy;
   }
 
+  async get(key: string): Promise<string | null> {
+    return this.getClient().get(key);
+  }
+
+  async set(key: string, value: string, expirySeconds?: number): Promise<void> {
+    if (expirySeconds) {
+      await this.getClient().set(key, value, "EX", expirySeconds);
+    } else {
+      await this.getClient().set(key, value);
+    }
+  }
+
   async close(): Promise<void> {
     if (this.client) {
       this.healthy = false;

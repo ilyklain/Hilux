@@ -15,6 +15,7 @@ import { detectFingerprint } from "../detectors/fingerprintDetector";
 import { detectPayload } from "../detectors/payloadDetector";
 import { detectBehavior } from "../detectors/behaviorDetector";
 import { calculateRiskScore, classifyRisk } from "../utils/riskScore";
+import geoip from "geoip-lite";
 
 async function runReputationDetector(
   ip: string,
@@ -154,6 +155,174 @@ export async function analyzeRequest(
     }
 
     return result;
+  }
+
+  const isPro = cfg.plan === "Pro" || cfg.plan === "Enterprise";
+  const isEnt = cfg.plan === "Enterprise";
+
+  if (cfg.extensions?.loginProtector?.enabled && isPro) {
+    const loginCfg = cfg.extensions.loginProtector;
+    const isLoginPath = loginCfg.paths.some(p => request.path.startsWith(p));
+
+    if (isLoginPath) {
+      if (loginCfg.honeypotField && request.body) {
+        try {
+          const body = typeof request.body === "string" ? JSON.parse(request.body) : request.body;
+          if (body[loginCfg.honeypotField]) {
+            const result: AnalysisResult = {
+              bot: true,
+              risk_score: 100,
+              classification: "block",
+              confidence: 100,
+              reasons: ["Login Honeypot Triggered"],
+              threat_breakdown: [{ detector: "behavior", score: 100, reason: "Honeypot filled" }],
+            };
+            if (!request.simulate) {
+              await db.saveLog({
+                ip: request.ip,
+                path: request.path,
+                method: request.method || "GET",
+                user_agent: request.headers["user-agent"] || "",
+                risk_score: 100,
+                classification: "block",
+                reasons: result.reasons,
+                detector_details: { extension: 100 },
+              }).catch(() => { });
+              await db.addToBlacklist(request.ip, "Honeypot triggered", 86400).catch(() => { });
+            }
+            return result;
+          }
+        } catch { }
+      }
+
+      if (loginCfg.maxAttempts > 0) {
+        const key = `hilux:login_bf:${request.ip}:${request.path}`;
+        const attempts = (await redis.get(key).catch(() => "0")) || "0";
+        const currentCount = parseInt(attempts, 10) + 1;
+
+        if (currentCount > loginCfg.maxAttempts) {
+          const result: AnalysisResult = {
+            bot: true,
+            risk_score: 100,
+            classification: "block",
+            confidence: 100,
+            reasons: ["Login Brute-Force Detected"],
+            threat_breakdown: [{ detector: "rate", score: 100, reason: "Too many login attempts" }],
+          };
+          if (!request.simulate) {
+            await db.saveLog({
+              ip: request.ip,
+              path: request.path,
+              method: request.method || "GET",
+              user_agent: request.headers["user-agent"] || "",
+              risk_score: 100,
+              classification: "block",
+              reasons: result.reasons,
+              detector_details: { extension: 100 },
+            }).catch(() => { });
+          }
+          return result;
+        }
+
+        if (!request.simulate) {
+          await redis.set(key, currentCount.toString(), loginCfg.windowSeconds).catch(() => { });
+        }
+      }
+    }
+  }
+
+  if (cfg.extensions?.geoBlocking?.enabled && cfg.extensions.geoBlocking.blockedCountries.length > 0 && isPro) {
+    const geo = geoip.lookup(request.ip);
+    if (geo && cfg.extensions.geoBlocking.blockedCountries.includes(geo.country)) {
+      const result: AnalysisResult = {
+        bot: true,
+        risk_score: 100,
+        classification: "block",
+        confidence: 100,
+        reasons: [`Geo-Blocking: ${geo.country} is restricted`],
+        threat_breakdown: [{ detector: "ip", score: 100, reason: "Country blocked" }],
+      };
+      if (!request.simulate) {
+        await db.saveLog({
+          ip: request.ip,
+          path: request.path,
+          method: request.method || "GET",
+          user_agent: request.headers["user-agent"] || "",
+          risk_score: 100,
+          classification: "block",
+          reasons: result.reasons,
+          detector_details: { extension: 100 },
+        }).catch(() => { });
+      }
+      return result;
+    }
+  }
+
+  if (cfg.extensions?.honeypotDecoys?.enabled && isPro) {
+    const hpCfg = cfg.extensions.honeypotDecoys;
+    if (hpCfg.paths.some(p => request.path === p)) {
+      const result: AnalysisResult = {
+        bot: true,
+        risk_score: 100,
+        classification: "block",
+        confidence: 100,
+        reasons: ["Honeypot Decoy Triggered"],
+        threat_breakdown: [{ detector: "behavior", score: 100, reason: "Hit trap endpoint" }],
+      };
+      if (!request.simulate) {
+        await db.saveLog({
+          ip: request.ip,
+          path: request.path,
+          method: request.method || "GET",
+          user_agent: request.headers["user-agent"] || "",
+          risk_score: 100,
+          classification: "block",
+          reasons: result.reasons,
+          detector_details: { extension: 100 },
+        }).catch(() => { });
+        await db.addToBlacklist(request.ip, "Honeypot Decoy hit", hpCfg.banDurationSeconds).catch(() => { });
+      }
+      return result;
+    }
+  }
+
+  if (cfg.extensions?.virtualPatching?.enabled && isEnt) {
+    const vpCfg = cfg.extensions.virtualPatching;
+    const bodyStr = request.body ? (typeof request.body === "string" ? request.body : JSON.stringify(request.body)) : "";
+    const subject = (request.path + " " + bodyStr).toLowerCase();
+
+    const patchPatterns: Record<string, RegExp> = {
+      log4shell: /\$\{jndi:(ldap|rmi|dns|nis|iiop|corba|lds|http):/i,
+      springshell: /class\.module\.classLoader/i,
+      shellshock: /\(\)\s*\{\s*[:;]\s*\}\s*/i,
+    };
+
+    for (const patchName of vpCfg.activePatches) {
+      const pattern = patchPatterns[patchName];
+      if (pattern && pattern.test(subject)) {
+        const result: AnalysisResult = {
+          bot: true,
+          risk_score: 100,
+          classification: "block",
+          confidence: 100,
+          reasons: [`Virtual Patch Triggered: ${patchName}`],
+          threat_breakdown: [{ detector: "payload", score: 100, reason: "Exploit pattern matched" }],
+        };
+        if (!request.simulate) {
+          await db.saveLog({
+            ip: request.ip,
+            path: request.path,
+            method: request.method || "GET",
+            user_agent: request.headers["user-agent"] || "",
+            risk_score: 100,
+            classification: "block",
+            reasons: result.reasons,
+            detector_details: { extension: 100 },
+          }).catch(() => { });
+        }
+        return result;
+      }
+    }
   }
 
   const detectorPromises: Array<Promise<DetectorResult> | DetectorResult> = [];

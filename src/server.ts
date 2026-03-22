@@ -67,6 +67,22 @@ server.addHook("onResponse", (request, reply, done) => {
   done();
 });
 
+server.addHook("preHandler", async (request, reply) => {
+  const publicRoutes = ["/health", "/hilux/auth", "/analyze"];
+  const isDashboardStatic = request.url.startsWith("/hilux-dashboard/");
+
+  if (publicRoutes.includes(request.url) || isDashboardStatic) {
+    return;
+  }
+
+  const authHeader = request.headers["authorization"];
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+  if (token !== DASHBOARD_SESSION_TOKEN) {
+    return reply.status(401).send({ error: "Unauthorized access to dashboard API" });
+  }
+});
+
 server.post<{ Body: AnalysisRequest }>(
   "/analyze",
   { schema: analyzeSchema },
@@ -152,13 +168,21 @@ server.post<{ Body: import("./config/config").DeepPartial<import("./config/confi
   "/config",
   async (request, reply) => {
     const merge = (target: any, source: any) => {
-      for (const key of Object.keys(source)) {
-        if (source[key] instanceof Object && !Array.isArray(source[key])) {
-          Object.assign(source[key], merge(target[key], source[key]));
-        }
+      const output = { ...target };
+      if (source instanceof Object && !Array.isArray(source)) {
+        Object.keys(source).forEach((key) => {
+          if (source[key] instanceof Object && !Array.isArray(source[key])) {
+            if (!(key in target)) {
+              Object.assign(output, { [key]: source[key] });
+            } else {
+              output[key] = merge(target[key], source[key]);
+            }
+          } else {
+            Object.assign(output, { [key]: source[key] });
+          }
+        });
       }
-      Object.assign(target || {}, source);
-      return target;
+      return output;
     };
 
     (hilux as any).config = merge(hilux.config, request.body);
@@ -203,8 +227,64 @@ server.delete<{ Params: { ip: string } }>(
     return reply.send({ success: true, ip: request.params.ip });
   }
 );
+server.post<{ Body: { license_key: string } }>("/license/activate", async (request, reply) => {
+  const { license_key } = request.body;
+
+  if (!license_key) {
+    return reply.status(400).send({ error: "License key is required" });
+  }
+
+  try {
+    const response = await fetch("https://api.lemonsqueezy.com/v1/licenses/activate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+      },
+      body: new URLSearchParams({ license_key, instance_name: `Hilux_${crypto.randomBytes(4).toString("hex")}` }),
+    });
+
+    const data: any = await response.json();
+
+    if (data.error || !data.activated) {
+      return reply.status(400).send({
+        error: "Invalid license key",
+        message: data.error || "Could not activate license"
+      });
+    }
+
+    const productName = data.meta.product_name.toLowerCase();
+    let plan: "Free" | "Pro" | "Enterprise" = "Free";
+
+    if (productName.includes("enterprise") || productName.includes("elite")) {
+      plan = "Enterprise";
+    } else if (productName.includes("pro") || productName.includes("hardened")) {
+      plan = "Pro";
+    }
+
+    (cfg as any).plan = plan;
+    (cfg as any).licenseKey = license_key;
+    (hilux.config as any).plan = plan;
+    (hilux.config as any).licenseKey = license_key;
+
+    return reply.send({
+      success: true,
+      plan,
+      product_name: data.meta.product_name
+    });
+  } catch (err: any) {
+    server.log.error(err);
+    return reply.status(500).send({ error: "Failed to verify license with Lemon Squeezy" });
+  }
+});
+
 server.post<{ Body: { password?: string } }>("/hilux/auth", async (req, reply) => {
   const validPassword = process.env.HILUX_DASHBOARD_PASSWORD || "123456";
+
+  if (validPassword === "123456") {
+    server.log.warn("WARNING: Dashboard is using the default password '123456'. Please set HILUX_DASHBOARD_PASSWORD env variable.");
+  }
+
   if (req.body?.password === validPassword) {
     return reply.send({ success: true, token: DASHBOARD_SESSION_TOKEN });
   }
@@ -221,7 +301,7 @@ server.get("/hilux-dashboard", async (_req, reply) => {
   return reply.redirect("/hilux-dashboard/");
 });
 
-const dashboardPages = ['settings', 'rules', 'logs', 'blacklist', 'login'];
+const dashboardPages = ['settings', 'rules', 'extensions', 'billing', 'logs', 'blacklist', 'login'];
 for (const page of dashboardPages) {
   server.get(`/hilux-dashboard/${page}`, async (_req, reply) => {
     return reply.sendFile(`${page}.html`);
