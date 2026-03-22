@@ -101,6 +101,20 @@ server.get("/stats/timeline", async (request, reply) => {
   return reply.send(await hilux.getTimeSeries(interval, buckets));
 });
 
+server.post<{
+  Body: { ip: string; path: string; method: string; headers: Record<string, string>; body?: string }
+}>("/stats/simulate", async (request, reply) => {
+  const analysis = await hilux.analyze({
+    ip: request.body.ip || "127.0.0.1",
+    path: request.body.path || "/",
+    method: request.body.method || "GET",
+    headers: request.body.headers || {},
+    body: request.body.body,
+    simulate: true,
+  });
+  return reply.send(analysis);
+});
+
 server.get<{ Params: { ip: string } }>(
   "/reputation/:ip",
   async (request, reply) => {

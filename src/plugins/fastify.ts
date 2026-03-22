@@ -110,6 +110,20 @@ async function hiluxPlugin(
     return reply.send(await hilux.getTimeSeries(interval, buckets));
   });
 
+  fastify.post<{
+    Body: { ip: string; path: string; method: string; headers: Record<string, string>; body?: string }
+  }>(`${prefix}/stats/simulate`, protectedRoute, async (req, reply) => {
+    const analysis = await hilux.analyze({
+      ip: req.body.ip || "127.0.0.1",
+      path: req.body.path || "/",
+      method: req.body.method || "GET",
+      headers: req.body.headers || {},
+      body: req.body.body,
+      simulate: true,
+    });
+    return reply.send(analysis);
+  });
+
   fastify.get<{ Params: { ip: string } }>(
     `${prefix}/reputation/:ip`,
     protectedRoute,

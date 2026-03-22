@@ -98,10 +98,10 @@ export interface HiluxPluginConfig {
 
 export interface HiluxCustomRule {
   id: string;
-  field: string;
+  condition: string;
   operator: string;
   value: string;
-  action: "ALLOW" | "BLOCK" | "LOG";
+  action: "ALLOW" | "BLOCK" | "LOG" | "CHALLENGE" | "SIMULATE";
 }
 
 export interface HiluxConfig {

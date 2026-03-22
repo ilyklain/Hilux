@@ -68,6 +68,65 @@ export async function analyzeRequest(
     };
   }
 
+  if (cfg.customRules && cfg.customRules.length > 0) {
+    for (const rule of cfg.customRules) {
+      let subject = "";
+      if (rule.condition === "Request.IP") subject = request.ip;
+      if (rule.condition === "Request.Path") subject = request.path;
+      if (rule.condition.startsWith("Headers.")) {
+        const headerName = rule.condition.split(".")[1].toLowerCase();
+        subject = request.headers[headerName] || "";
+      }
+
+      let matched = false;
+      const lowerSubject = subject.toLowerCase();
+      const lowerValue = rule.value.toLowerCase();
+
+      switch (rule.operator) {
+        case "equals": matched = lowerSubject === lowerValue; break;
+        case "contains": matched = lowerSubject.includes(lowerValue); break;
+        case "starts_with": matched = lowerSubject.startsWith(lowerValue); break;
+        case "ends_with": matched = lowerSubject.endsWith(lowerValue); break;
+        case "is_empty": matched = subject.trim() === ""; break;
+      }
+
+      if (matched) {
+        if (rule.action === "BLOCK") {
+          const result: AnalysisResult = {
+            bot: true,
+            risk_score: 100,
+            classification: "block",
+            confidence: 100,
+            reasons: [`Custom Rule Triggered: ${rule.id} (${rule.condition})`],
+            threat_breakdown: [{ detector: "reputation", score: 100, reason: "Custom Block Rule" }],
+          };
+          if (!request.simulate) {
+            await db.saveLog({
+              ip: request.ip,
+              path: request.path,
+              method: request.method || "GET",
+              user_agent: request.headers["user-agent"] || "",
+              risk_score: 100,
+              classification: "block",
+              reasons: result.reasons,
+              detector_details: { customRule: 100 },
+            }).catch(() => { });
+          }
+          return result;
+        } else if (rule.action === "ALLOW") {
+          return {
+            bot: false,
+            risk_score: 0,
+            classification: "allow",
+            confidence: 100,
+            reasons: [`Custom Rule Triggered (Allow): ${rule.id}`],
+            threat_breakdown: [],
+          };
+        }
+      }
+    }
+  }
+
   const blacklisted = await db.isBlacklisted(request.ip);
   if (blacklisted) {
     const result: AnalysisResult = {
@@ -81,16 +140,18 @@ export async function analyzeRequest(
       ],
     };
 
-    await db.saveLog({
-      ip: request.ip,
-      path: request.path,
-      method: request.method || "GET",
-      user_agent: request.headers["user-agent"] || "",
-      risk_score: 150,
-      classification: "block",
-      reasons: ["IP is blacklisted"],
-      detector_details: { blacklist: 150 },
-    }).catch(() => { });
+    if (!request.simulate) {
+      await db.saveLog({
+        ip: request.ip,
+        path: request.path,
+        method: request.method || "GET",
+        user_agent: request.headers["user-agent"] || "",
+        risk_score: 150,
+        classification: "block",
+        reasons: ["IP is blacklisted"],
+        detector_details: { blacklist: 150 },
+      }).catch(() => { });
+    }
 
     return result;
   }
@@ -160,47 +221,49 @@ export async function analyzeRequest(
     }
   }
 
-  await Promise.all([
-    db.saveLog({
-      ip: request.ip,
-      path: request.path,
-      method: request.method || "GET",
-      user_agent: request.headers["user-agent"] || "",
-      risk_score: score,
-      classification,
-      reasons,
-      detector_details: detectorDetails,
-    }).catch(() => { }),
-    reputation.record(request.ip, score, cfg.thresholds.suspicious).catch(() => { }),
-  ]);
+  if (!request.simulate) {
+    await Promise.all([
+      db.saveLog({
+        ip: request.ip,
+        path: request.path,
+        method: request.method || "GET",
+        user_agent: request.headers["user-agent"] || "",
+        risk_score: score,
+        classification,
+        reasons,
+        detector_details: detectorDetails,
+      }).catch(() => { }),
+      reputation.record(request.ip, score, cfg.thresholds.suspicious).catch(() => { }),
+    ]);
 
-  if (isBot) {
-    const repScore = await reputation.getScore(request.ip).catch(() => 0);
-    if (repScore >= cfg.reputation.autoBlacklistThreshold) {
-      await db.addToBlacklist(
-        request.ip,
-        `Auto-blacklisted: reputation score ${repScore}`,
-        cfg.blacklist.defaultDurationSeconds
-      ).catch(() => { });
-    }
+    if (isBot) {
+      const repScore = await reputation.getScore(request.ip).catch(() => 0);
+      if (repScore >= cfg.reputation.autoBlacklistThreshold) {
+        await db.addToBlacklist(
+          request.ip,
+          `Auto-blacklisted: reputation score ${repScore}`,
+          cfg.blacklist.defaultDurationSeconds
+        ).catch(() => { });
+      }
 
-    if (cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onBlock) {
+      if (cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onBlock) {
+        fetch(cfg.plugin.webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: `Hilux High Risk Request Blocked: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
+          })
+        }).catch(err => console.error("Webhook dispatch failed", err));
+      }
+    } else if (classification === "suspicious" && cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onSuspicious) {
       fetch(cfg.plugin.webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: `Hilux High Risk Request Blocked: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
+          content: `Hilux Suspicious Activity Detected: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
         })
       }).catch(err => console.error("Webhook dispatch failed", err));
     }
-  } else if (classification === "suspicious" && cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onSuspicious) {
-    fetch(cfg.plugin.webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: `Hilux Suspicious Activity Detected: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
-      })
-    }).catch(err => console.error("Webhook dispatch failed", err));
   }
 
   return {
