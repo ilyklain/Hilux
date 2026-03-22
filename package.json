@@ -50,11 +50,13 @@
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1",
+    "geoip-lite": "^2.0.1",
     "ioredis": "^5.4.2",
     "ioredis-mock": "^8.13.1",
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@types/geoip-lite": "^1.4.4",
     "@types/node": "^22.10.5",
     "@types/pg": "^8.11.10",
     "ts-node": "^10.9.2",

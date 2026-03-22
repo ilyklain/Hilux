@@ -82,7 +82,6 @@ async function hiluxPlugin(
     return reply.status(401).send({ error: "Invalid password" });
   });
 
-  // Auth Middleware Guard
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || authHeader !== `Bearer ${DASHBOARD_SESSION_TOKEN}`) {
@@ -142,6 +141,29 @@ async function hiluxPlugin(
     return reply.send(await hilux.getBlacklist());
   });
 
+  fastify.get(`${prefix}/config`, protectedRoute, async (_req, reply) => {
+    return reply.send(hilux.config);
+  });
+
+  fastify.post<{ Body: DeepPartial<HiluxConfig> }>(
+    `${prefix}/config`,
+    protectedRoute,
+    async (req, reply) => {
+      const merge = (target: any, source: any) => {
+        for (const key of Object.keys(source)) {
+          if (source[key] instanceof Object && !Array.isArray(source[key])) {
+            Object.assign(source[key], merge(target[key], source[key]));
+          }
+        }
+        Object.assign(target || {}, source);
+        return target;
+      };
+      
+      (hilux as any).config = merge(hilux.config, req.body);
+      return reply.send({ success: true, updatedConfig: hilux.config });
+    }
+  );
+
   fastify.post<{
     Body: { ip: string; reason?: string; duration_seconds?: number };
   }>(`${prefix}/blacklist`, protectedRoute, async (req, reply) => {
@@ -166,12 +188,26 @@ async function hiluxPlugin(
     }
   );
 
-  // Serve the embedded Next.js Static Dashboard
   fastify.register(fastifyStatic, {
-    root: path.join(__dirname, "../dashboard"),
+    root: path.join(__dirname, "../dashboard-ui/out"),
     prefix: `${prefix}-dashboard/`,
-    decorateReply: false,
+    decorateReply: true,
   });
+
+  const dashboardPages = ['settings', 'rules', 'logs', 'blacklist', 'login'];
+
+  fastify.get(`${prefix}-dashboard`, async (_req, reply) => {
+    return reply.redirect(`${prefix}-dashboard/`);
+  });
+
+  for (const page of dashboardPages) {
+    fastify.get(`${prefix}-dashboard/${page}`, async (_req, reply) => {
+      return reply.sendFile(`${page}.html`);
+    });
+    fastify.get(`${prefix}-dashboard/${page}/`, async (_req, reply) => {
+      return reply.sendFile(`${page}.html`);
+    });
+  }
 
   fastify.addHook("onClose", async () => {
     await hilux.shutdown();

@@ -130,6 +130,39 @@ server.get("/blacklist", async (_request, reply) => {
   return reply.send(await hilux.getBlacklist());
 });
 
+server.get("/config", async (_request, reply) => {
+  return reply.send(hilux.config);
+});
+
+server.post<{ Body: import("./config/config").DeepPartial<import("./config/config").HiluxConfig> }>(
+  "/config",
+  async (request, reply) => {
+    const merge = (target: any, source: any) => {
+      for (const key of Object.keys(source)) {
+        if (source[key] instanceof Object && !Array.isArray(source[key])) {
+          Object.assign(source[key], merge(target[key], source[key]));
+        }
+      }
+      Object.assign(target || {}, source);
+      return target;
+    };
+
+    (hilux as any).config = merge(hilux.config, request.body);
+
+    if (hilux.config.plugin.webhookUrl && hilux.config.plugin.webhookEvents?.onSystem) {
+      fetch(hilux.config.plugin.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: "Hilux - WAF configuration has been dynamically updated via the dashboard API."
+        })
+      }).catch(err => server.log.error("Webhook dispatch failed", err));
+    }
+
+    return reply.send({ success: true, updatedConfig: hilux.config });
+  }
+);
+
 server.post<{
   Body: { ip: string; reason?: string; duration_seconds?: number };
 }>(
@@ -167,12 +200,22 @@ server.post<{ Body: { password?: string } }>("/hilux/auth", async (req, reply) =
 server.register(fastifyStatic, {
   root: path.join(__dirname, "../dashboard-ui/out"),
   prefix: "/hilux-dashboard/",
-  decorateReply: false,
+  decorateReply: true,
 });
 
 server.get("/hilux-dashboard", async (_req, reply) => {
   return reply.redirect("/hilux-dashboard/");
 });
+
+const dashboardPages = ['settings', 'rules', 'logs', 'blacklist', 'login'];
+for (const page of dashboardPages) {
+  server.get(`/hilux-dashboard/${page}`, async (_req, reply) => {
+    return reply.sendFile(`${page}.html`);
+  });
+  server.get(`/hilux-dashboard/${page}/`, async (_req, reply) => {
+    return reply.sendFile(`${page}.html`);
+  });
+}
 
 async function start(): Promise<void> {
   try {
@@ -187,6 +230,16 @@ async function start(): Promise<void> {
     server.log.info(
       `Hilux bot detector running on ${cfg.server.host}:${cfg.server.port}`
     );
+
+    if (cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onSystem) {
+      fetch(cfg.plugin.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: `Hilux - Server initialized and bot detector running on ${cfg.server.host}:${cfg.server.port}`
+        })
+      }).catch(err => server.log.error("Webhook dispatch failed", err));
+    }
   } catch (err) {
     server.log.error(err);
     process.exit(1);

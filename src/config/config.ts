@@ -87,6 +87,21 @@ export interface HiluxPluginConfig {
   blockMessage: string;
   extractIp: (req: any) => string;
   prefix: string;
+  webhookUrl?: string;
+  webhookEvents: {
+    onBan: boolean;
+    onBlock: boolean;
+    onSuspicious: boolean;
+    onSystem: boolean;
+  };
+}
+
+export interface HiluxCustomRule {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+  action: "ALLOW" | "BLOCK" | "LOG";
 }
 
 export interface HiluxConfig {
@@ -101,6 +116,7 @@ export interface HiluxConfig {
   enabledDetectors: HiluxDetectorsToggle;
   plugin: HiluxPluginConfig;
   whitelistedIps: string[];
+  customRules: HiluxCustomRule[];
   suspiciousUserAgents: string[];
   invalidChromeVersions: { minMajor: number; maxMajor: number };
   requiredBrowserHeaders: string[];
@@ -211,9 +227,17 @@ const DEFAULT_CONFIG: HiluxConfig = {
     blockMessage: "Forbidden",
     extractIp: defaultExtractIp,
     prefix: "/hilux",
+    webhookUrl: undefined,
+    webhookEvents: {
+      onBan: true,
+      onBlock: false,
+      onSuspicious: false,
+      onSystem: true,
+    },
   },
 
   whitelistedIps: [],
+  customRules: [],
 
   suspiciousUserAgents: [
     "curl",
@@ -529,6 +553,15 @@ export function buildConfigFromEnv(): HiluxConfig {
     },
     blacklist: {
       defaultDurationSeconds: process.env.BLACKLIST_DURATION ? parseInt(process.env.BLACKLIST_DURATION, 10) : undefined,
+    },
+    plugin: {
+      webhookUrl: process.env.HILUX_WEBHOOK_URL || undefined,
+      webhookEvents: {
+        onBan: process.env.WEBHOOK_ON_BAN !== "false",
+        onBlock: process.env.WEBHOOK_ON_BLOCK === "true",
+        onSuspicious: process.env.WEBHOOK_ON_SUSPICIOUS === "true",
+        onSystem: process.env.WEBHOOK_ON_SYSTEM !== "false",
+      }
     },
     behavior: {
       windowSeconds: process.env.BEHAVIOR_WINDOW ? parseInt(process.env.BEHAVIOR_WINDOW, 10) : undefined,

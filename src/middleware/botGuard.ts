@@ -90,7 +90,7 @@ export async function analyzeRequest(
       classification: "block",
       reasons: ["IP is blacklisted"],
       detector_details: { blacklist: 150 },
-    }).catch(() => {});
+    }).catch(() => { });
 
     return result;
   }
@@ -170,8 +170,8 @@ export async function analyzeRequest(
       classification,
       reasons,
       detector_details: detectorDetails,
-    }).catch(() => {}),
-    reputation.record(request.ip, score, cfg.thresholds.suspicious).catch(() => {}),
+    }).catch(() => { }),
+    reputation.record(request.ip, score, cfg.thresholds.suspicious).catch(() => { }),
   ]);
 
   if (isBot) {
@@ -181,8 +181,26 @@ export async function analyzeRequest(
         request.ip,
         `Auto-blacklisted: reputation score ${repScore}`,
         cfg.blacklist.defaultDurationSeconds
-      ).catch(() => {});
+      ).catch(() => { });
     }
+
+    if (cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onBlock) {
+      fetch(cfg.plugin.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: `Hilux High Risk Request Blocked: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
+        })
+      }).catch(err => console.error("Webhook dispatch failed", err));
+    }
+  } else if (classification === "suspicious" && cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onSuspicious) {
+    fetch(cfg.plugin.webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: `Hilux Suspicious Activity Detected: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
+      })
+    }).catch(err => console.error("Webhook dispatch failed", err));
   }
 
   return {

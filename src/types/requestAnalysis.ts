@@ -16,6 +16,7 @@ export interface AnalysisRequest {
   method?: string;
   headers: Record<string, string>;
   body?: string;
+  simulate?: boolean;
 }
 
 export interface DetectorResult {

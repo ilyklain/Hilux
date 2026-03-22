@@ -1,3 +1,4 @@
+import geoip from "geoip-lite";
 import {
   HiluxConfig,
   DeepPartial,
@@ -47,8 +48,19 @@ export class Hilux {
     return this.db.getStats();
   }
 
-  async getTopOffenders(limit?: number): Promise<TopOffender[]> {
-    return this.db.getTopOffenders(limit);
+  async getTopOffenders(limit?: number): Promise<any[]> {
+    const offenders = await this.db.getTopOffenders(limit);
+    return offenders.map(off => {
+      const geo = geoip.lookup(off.ip);
+      return {
+        ...off,
+        geo: geo ? {
+          country: geo.country,
+          city: geo.city,
+          ll: [geo.ll[1], geo.ll[0]]
+        } : null
+      };
+    });
   }
 
   async getDetectorBreakdown(): Promise<DetectorBreakdown[]> {
@@ -60,6 +72,15 @@ export class Hilux {
   }
 
   async addToBlacklist(ip: string, reason: string, durationSeconds?: number): Promise<void> {
+    if (this.config.plugin.webhookUrl && this.config.plugin.webhookEvents?.onBan) {
+      fetch(this.config.plugin.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: `Hilux IP Banned: ${ip}\nReason: ${reason}`
+        })
+      }).catch(err => console.error("Webhook dispatch failed", err));
+    }
     return this.db.addToBlacklist(ip, reason, durationSeconds);
   }
 
