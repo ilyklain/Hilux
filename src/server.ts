@@ -69,7 +69,7 @@ server.addHook("onResponse", (request, reply, done) => {
 
 server.addHook("preHandler", async (request, reply) => {
   const publicRoutes = ["/health", "/hilux/auth", "/analyze"];
-  const isDashboardStatic = request.url.startsWith("/hilux-dashboard/");
+  const isDashboardStatic = request.url.startsWith("/hilux-dashboard");
 
   if (publicRoutes.includes(request.url) || isDashboardStatic) {
     return;
