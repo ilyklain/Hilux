@@ -48,7 +48,7 @@
   "dependencies": {
     "@fastify/static": "^9.0.0",
     "dotenv": "^16.4.7",
-    "fastify": "^5.2.1",
+    "fastify": "^5.8.4",
     "fastify-plugin": "^5.0.1",
     "geoip-lite": "^2.0.1",
     "ioredis": "^5.4.2",
