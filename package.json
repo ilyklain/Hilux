@@ -1,6 +1,6 @@
 {
   "name": "@gustavoj/hilux",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "A bot detector for APIs, that analyzes HTTP requests",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
