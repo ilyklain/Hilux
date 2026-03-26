@@ -19,6 +19,14 @@
     "./express": {
       "types": "./dist/plugins/express.d.ts",
       "require": "./dist/plugins/express.js"
+    },
+    "./nestjs": {
+      "types": "./dist/plugins/nestjs.d.ts",
+      "require": "./dist/plugins/nestjs.js"
+    },
+    "./koa": {
+      "types": "./dist/plugins/koa.d.ts",
+      "require": "./dist/plugins/koa.js"
     }
   },
   "files": [

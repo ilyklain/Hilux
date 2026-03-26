@@ -72,14 +72,20 @@ export class Hilux {
   }
 
   async addToBlacklist(ip: string, reason: string, durationSeconds?: number): Promise<void> {
-    if (this.config.plugin.webhookUrl && this.config.plugin.webhookEvents?.onBan) {
-      fetch(this.config.plugin.webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: `Hilux IP Banned: ${ip}\nReason: ${reason}`
-        })
-      }).catch(err => console.error("Webhook dispatch failed", err));
+    const webhookUrls = [
+      ...(this.config.plugin.webhookUrl ? [this.config.plugin.webhookUrl] : []),
+      ...(this.config.plugin.webhookUrls || []),
+    ];
+
+    if (webhookUrls.length > 0 && this.config.plugin.webhookEvents?.onBan) {
+      const { dispatchWebhook } = require("./extensions/webhookAlerts");
+      dispatchWebhook({
+        event: "ban",
+        ip,
+        score: 0,
+        reasons: [reason],
+        timestamp: new Date().toISOString(),
+      }, { urls: webhookUrls }).catch(() => { });
     }
     return this.db.addToBlacklist(ip, reason, durationSeconds);
   }

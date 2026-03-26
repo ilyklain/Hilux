@@ -43,6 +43,8 @@ export {
 
 export { hiluxFastifyPlugin } from "./plugins/fastify";
 export { hiluxExpressMiddleware } from "./plugins/express";
+export { HiluxModule, HiluxGuard, createHiluxMiddleware as hiluxNestMiddleware } from "./plugins/nestjs";
+export { hiluxKoaMiddleware } from "./plugins/koa";
 
 export { RedisManager } from "./utils/redis";
 export { DatabaseManager } from "./utils/database";
@@ -55,3 +57,7 @@ export { detectIp } from "./detectors/ipDetector";
 export { detectFingerprint } from "./detectors/fingerprintDetector";
 export { detectPayload } from "./detectors/payloadDetector";
 export { detectBehavior } from "./detectors/behaviorDetector";
+
+export { dispatchWebhook } from "./extensions/webhookAlerts";
+export { getChallengeHtml, verifyTurnstileToken, verifyHCaptchaToken, verifyPowSolution } from "./extensions/challengeGateway";
+export { calculateDelay, applyTarpit } from "./extensions/tarpit";

@@ -2,6 +2,8 @@ import { Hilux } from "../hilux";
 import { DeepPartial, HiluxConfig } from "../config/config";
 import { AnalysisResult } from "../types/requestAnalysis";
 import { IncomingMessage, ServerResponse } from "http";
+import { applyTarpit } from "../extensions/tarpit";
+import { getChallengeHtml } from "../extensions/challengeGateway";
 
 export interface HiluxExpressRequest extends IncomingMessage {
   hilux?: AnalysisResult;
@@ -70,6 +72,20 @@ export function hiluxExpressMiddleware(
         });
 
         req.hilux = result;
+
+        if (result.tarpit_delay_ms && result.tarpit_delay_ms > 0) {
+          await applyTarpit(result.tarpit_delay_ms);
+        }
+
+        if (result.challenge_required) {
+          const challengeHtml = getChallengeHtml(
+            hilux.config.plugin.challenge as any,
+            `${hilux.config.plugin.prefix}/challenge/verify`
+          );
+          res.writeHead(429, { "Content-Type": "text/html" });
+          res.end(challengeHtml);
+          return;
+        }
 
         if (autoBlock && result.classification === "block") {
           res.writeHead(blockStatusCode, { "Content-Type": "application/json" });

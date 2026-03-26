@@ -88,11 +88,28 @@ export interface HiluxPluginConfig {
   extractIp: (req: any) => string;
   prefix: string;
   webhookUrl?: string;
+  webhookUrls: string[];
   webhookEvents: {
     onBan: boolean;
     onBlock: boolean;
     onSuspicious: boolean;
+    onChallenge: boolean;
     onSystem: boolean;
+  };
+  challenge: {
+    enabled: boolean;
+    provider: "turnstile" | "hcaptcha" | "pow";
+    siteKey?: string;
+    secretKey?: string;
+    powDifficulty: number;
+    sessionTtlSeconds: number;
+    bypassCookieName: string;
+  };
+  tarpit: {
+    enabled: boolean;
+    baseDelayMs: number;
+    maxDelayMs: number;
+    scoreThreshold: number;
   };
 }
 
@@ -262,11 +279,26 @@ const DEFAULT_CONFIG: HiluxConfig = {
     extractIp: defaultExtractIp,
     prefix: "/hilux",
     webhookUrl: undefined,
+    webhookUrls: [],
     webhookEvents: {
       onBan: true,
       onBlock: false,
       onSuspicious: false,
+      onChallenge: false,
       onSystem: true,
+    },
+    challenge: {
+      enabled: false,
+      provider: "pow",
+      powDifficulty: 4,
+      sessionTtlSeconds: 3600,
+      bypassCookieName: "hilux_verified",
+    },
+    tarpit: {
+      enabled: false,
+      baseDelayMs: 100,
+      maxDelayMs: 5000,
+      scoreThreshold: 20,
     },
   },
 

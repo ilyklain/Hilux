@@ -15,6 +15,8 @@ import { detectFingerprint } from "../detectors/fingerprintDetector";
 import { detectPayload } from "../detectors/payloadDetector";
 import { detectBehavior } from "../detectors/behaviorDetector";
 import { calculateRiskScore, classifyRisk } from "../utils/riskScore";
+import { dispatchWebhook, WebhookPayload } from "../extensions/webhookAlerts";
+import { calculateDelay } from "../extensions/tarpit";
 import geoip from "geoip-lite";
 
 async function runReputationDetector(
@@ -74,6 +76,11 @@ export async function analyzeRequest(
       let subject = "";
       if (rule.condition === "Request.IP") subject = request.ip;
       if (rule.condition === "Request.Path") subject = request.path;
+      if (rule.condition === "Request.Method") subject = request.method || "GET";
+      if (rule.condition === "Request.Country") {
+        const geo = geoip.lookup(request.ip);
+        subject = geo?.country || "";
+      }
       if (rule.condition.startsWith("Headers.")) {
         const headerName = rule.condition.split(".")[1].toLowerCase();
         subject = request.headers[headerName] || "";
@@ -85,10 +92,14 @@ export async function analyzeRequest(
 
       switch (rule.operator) {
         case "equals": matched = lowerSubject === lowerValue; break;
+        case "not_equals": matched = lowerSubject !== lowerValue; break;
         case "contains": matched = lowerSubject.includes(lowerValue); break;
+        case "not_contains": matched = !lowerSubject.includes(lowerValue); break;
         case "starts_with": matched = lowerSubject.startsWith(lowerValue); break;
         case "ends_with": matched = lowerSubject.endsWith(lowerValue); break;
+        case "regex": try { matched = new RegExp(rule.value, "i").test(subject); } catch { matched = false; } break;
         case "is_empty": matched = subject.trim() === ""; break;
+        case "is_not_empty": matched = subject.trim() !== ""; break;
       }
 
       if (matched) {
@@ -405,6 +416,11 @@ export async function analyzeRequest(
       reputation.record(request.ip, score, cfg.thresholds.suspicious).catch(() => { }),
     ]);
 
+    const webhookUrls = [
+      ...(cfg.plugin.webhookUrl ? [cfg.plugin.webhookUrl] : []),
+      ...(cfg.plugin.webhookUrls || []),
+    ];
+
     if (isBot) {
       const repScore = await reputation.getScore(request.ip).catch(() => 0);
       if (repScore >= cfg.reputation.autoBlacklistThreshold) {
@@ -415,25 +431,31 @@ export async function analyzeRequest(
         ).catch(() => { });
       }
 
-      if (cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onBlock) {
-        fetch(cfg.plugin.webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content: `Hilux High Risk Request Blocked: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
-          })
-        }).catch(err => console.error("Webhook dispatch failed", err));
+      if (webhookUrls.length > 0 && cfg.plugin.webhookEvents?.onBlock) {
+        dispatchWebhook({
+          event: "block",
+          ip: request.ip,
+          path: request.path,
+          score,
+          reasons,
+          classification,
+          timestamp: new Date().toISOString(),
+        }, { urls: webhookUrls }).catch(() => { });
       }
-    } else if (classification === "suspicious" && cfg.plugin.webhookUrl && cfg.plugin.webhookEvents?.onSuspicious) {
-      fetch(cfg.plugin.webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: `Hilux Suspicious Activity Detected: ${request.ip}\nPath: ${request.path}\nScore: ${score}\nReason: ${reasons.join(", ")}`
-        })
-      }).catch(err => console.error("Webhook dispatch failed", err));
+    } else if (classification === "suspicious" && webhookUrls.length > 0 && cfg.plugin.webhookEvents?.onSuspicious) {
+      dispatchWebhook({
+        event: "suspicious",
+        ip: request.ip,
+        path: request.path,
+        score,
+        reasons,
+        classification,
+        timestamp: new Date().toISOString(),
+      }, { urls: webhookUrls }).catch(() => { });
     }
   }
+
+  const tarpitDelay = calculateDelay(score, cfg.thresholds.block, cfg.plugin.tarpit as any);
 
   return {
     bot: isBot,
@@ -442,5 +464,7 @@ export async function analyzeRequest(
     confidence,
     reasons,
     threat_breakdown,
+    tarpit_delay_ms: tarpitDelay,
+    challenge_required: classification === "suspicious" && cfg.plugin.challenge?.enabled,
   };
 }

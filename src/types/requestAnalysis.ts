@@ -38,6 +38,8 @@ export interface AnalysisResult {
   confidence: number;
   reasons: string[];
   threat_breakdown: ThreatBreakdown[];
+  tarpit_delay_ms?: number;
+  challenge_required?: boolean;
 }
 
 export interface DetectionLog {
