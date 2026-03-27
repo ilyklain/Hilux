@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Shield, History, Ban, Settings, LogOut, Puzzle, CreditCard } from "lucide-react";
+import { LayoutDashboard, Shield, History, Ban, Settings, LogOut, Puzzle, CreditCard, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -11,6 +11,7 @@ const navigation = [
   { name: "Extensions", href: "/extensions", icon: Puzzle },
   { name: "Traffic Logs", href: "/logs", icon: History },
   { name: "Blocked IPs", href: "/blacklist", icon: Ban },
+  { name: "Advanced", href: "/advanced", icon: Sparkles },
   { name: "Billing & Plans", href: "/billing", icon: CreditCard },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

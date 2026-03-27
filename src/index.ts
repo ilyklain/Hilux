@@ -61,3 +61,6 @@ export { detectBehavior } from "./detectors/behaviorDetector";
 export { dispatchWebhook } from "./extensions/webhookAlerts";
 export { getChallengeHtml, verifyTurnstileToken, verifyHCaptchaToken, verifyPowSolution } from "./extensions/challengeGateway";
 export { calculateDelay, applyTarpit } from "./extensions/tarpit";
+export { CircuitBreaker } from "./extensions/circuitBreaker";
+export { verifyIntegrityToken, generateClientSDK, getIntegrityScriptTag } from "./extensions/clientIntegrity";
+export { detectEnumeration } from "./detectors/enumerationDetector";

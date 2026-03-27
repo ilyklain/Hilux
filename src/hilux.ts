@@ -8,6 +8,7 @@ import { RedisManager } from "./utils/redis";
 import { DatabaseManager } from "./utils/database";
 import { ReputationManager } from "./utils/ipReputation";
 import { analyzeRequest } from "./middleware/botGuard";
+import { CircuitBreaker } from "./extensions/circuitBreaker";
 import {
   AnalysisRequest,
   AnalysisResult,
@@ -25,6 +26,7 @@ export class Hilux {
   readonly redis: RedisManager;
   readonly db: DatabaseManager;
   readonly reputation: ReputationManager;
+  readonly circuitBreaker: CircuitBreaker;
   private connected = false;
 
   constructor(overrides?: DeepPartial<HiluxConfig>) {
@@ -32,6 +34,7 @@ export class Hilux {
     this.redis = new RedisManager(this.config.redis);
     this.db = new DatabaseManager(this.config.postgres, this.config.thresholds);
     this.reputation = new ReputationManager(this.redis, this.config.reputation);
+    this.circuitBreaker = new CircuitBreaker(this.redis, this.config.plugin.circuitBreaker as any);
   }
 
   async connect(): Promise<void> {
@@ -41,7 +44,27 @@ export class Hilux {
   }
 
   async analyze(request: AnalysisRequest): Promise<AnalysisResult> {
-    return analyzeRequest(request, this.config, this.redis, this.db, this.reputation);
+    if (this.config.plugin.circuitBreaker.enabled) {
+      const isOpen = await this.circuitBreaker.isOpen();
+      if (isOpen && !this.config.whitelistedIps.includes(request.ip)) {
+        return {
+          bot: true,
+          risk_score: 100,
+          classification: "block",
+          confidence: 100,
+          reasons: ["Circuit Breaker: Lockdown active. Only whitelisted IPs allowed."],
+          threat_breakdown: [{ detector: "rate", score: 100, reason: "Circuit breaker lockdown" }],
+        };
+      }
+    }
+
+    const result = await analyzeRequest(request, this.config, this.redis, this.db, this.reputation);
+
+    if (result.classification === "block" && this.config.plugin.circuitBreaker.enabled) {
+      this.circuitBreaker.recordBlock().catch(() => {});
+    }
+
+    return result;
   }
 
   async getStats(): Promise<DetectionStats> {

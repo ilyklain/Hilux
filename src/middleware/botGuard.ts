@@ -17,6 +17,8 @@ import { detectBehavior } from "../detectors/behaviorDetector";
 import { calculateRiskScore, classifyRisk } from "../utils/riskScore";
 import { dispatchWebhook, WebhookPayload } from "../extensions/webhookAlerts";
 import { calculateDelay } from "../extensions/tarpit";
+import { verifyIntegrityToken } from "../extensions/clientIntegrity";
+import { detectEnumeration } from "../detectors/enumerationDetector";
 import geoip from "geoip-lite";
 
 async function runReputationDetector(
@@ -388,6 +390,28 @@ export async function analyzeRequest(
     );
   }
 
+  if (cfg.behavior.enumerationDetection) {
+    detectorPromises.push(
+      detectEnumeration(request.ip, request.path, redis, cfg).catch((): DetectorResult => ({
+        detector: "behavior",
+        score: 0,
+        reason: null,
+      }))
+    );
+  }
+
+  const integrityResult = verifyIntegrityToken(
+    request.headers[cfg.plugin.clientIntegrity?.headerName || "x-hilux-integrity"],
+    cfg.plugin.clientIntegrity as any
+  );
+  if (integrityResult.score > 0) {
+    detectorPromises.push(Promise.resolve({
+      detector: "fingerprint" as const,
+      score: integrityResult.score,
+      reason: integrityResult.reason,
+    }));
+  }
+
   const results = await Promise.all(detectorPromises);
 
   const { score, reasons, confidence, threat_breakdown } = calculateRiskScore(results);
@@ -457,12 +481,16 @@ export async function analyzeRequest(
 
   const tarpitDelay = calculateDelay(score, cfg.thresholds.block, cfg.plugin.tarpit as any);
 
+  const isShadow = cfg.plugin.shadowMode === true;
+  const finalClassification = isShadow ? (classification === "block" ? "suspicious" : classification) : classification;
+  const finalIsBot = isShadow ? false : isBot;
+
   return {
-    bot: isBot,
+    bot: finalIsBot,
     risk_score: score,
-    classification,
+    classification: finalClassification,
     confidence,
-    reasons,
+    reasons: isShadow ? [...reasons, "[Shadow Mode: would have been " + classification + "]"] : reasons,
     threat_breakdown,
     tarpit_delay_ms: tarpitDelay,
     challenge_required: classification === "suspicious" && cfg.plugin.challenge?.enabled,

@@ -79,6 +79,7 @@ export interface HiluxBehaviorConfig {
   maxPaths: number;
   regularIntervalThresholdMs: number;
   minRequestsForAnalysis: number;
+  enumerationDetection: boolean;
 }
 
 export interface HiluxPluginConfig {
@@ -110,6 +111,21 @@ export interface HiluxPluginConfig {
     baseDelayMs: number;
     maxDelayMs: number;
     scoreThreshold: number;
+  };
+  circuitBreaker: {
+    enabled: boolean;
+    windowSeconds: number;
+    blockThreshold: number;
+    cooldownSeconds: number;
+    allowWhitelistedOnly: boolean;
+  };
+  shadowMode: boolean;
+  clientIntegrity: {
+    enabled: boolean;
+    headerName: string;
+    secret: string;
+    tokenTtlSeconds: number;
+    penaltyScore: number;
   };
 }
 
@@ -299,6 +315,21 @@ const DEFAULT_CONFIG: HiluxConfig = {
       baseDelayMs: 100,
       maxDelayMs: 5000,
       scoreThreshold: 20,
+    },
+    circuitBreaker: {
+      enabled: false,
+      windowSeconds: 60,
+      blockThreshold: 50,
+      cooldownSeconds: 300,
+      allowWhitelistedOnly: true,
+    },
+    shadowMode: false,
+    clientIntegrity: {
+      enabled: false,
+      headerName: "x-hilux-integrity",
+      secret: "",
+      tokenTtlSeconds: 300,
+      penaltyScore: 30,
     },
   },
 
@@ -575,6 +606,7 @@ const DEFAULT_CONFIG: HiluxConfig = {
     maxPaths: 50,
     regularIntervalThresholdMs: 50,
     minRequestsForAnalysis: 5,
+    enumerationDetection: true,
   },
 };
 
